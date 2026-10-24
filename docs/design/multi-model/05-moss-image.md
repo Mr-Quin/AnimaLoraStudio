@@ -55,7 +55,7 @@
 | M2 | **DiT 支持 Comfy 单文件 bf16 与 int8_convrot**；不收 diffusers 分片目录（loader 键映射仍容忍两种命名，便于测试） | bf16 10.2GB 超出多数消费卡的可用显存；int8 与 Krea2 的 fp8 同属「量化底模常驻」方案。在 int8 底模上训练、在 int8 底模上推理，环境一致 |
 | M3 | **默认训 Base，SFT 同列可选** | 见下方「Base vs SFT」 |
 | M4 | **不承诺显存档位**；接入 Krea2 的显存编排（让位 / 三档）与 block swap，能优化到哪儿算哪儿 | — |
-| M5 | **能力集对齐 Krea2**：`masked_loss`、`text_cache`、`block_swap` | navit / sra / leap / compile_blocks 首版不开。`caption_tag_ops` 与 `cached_varlen` 被 `validate_spec` 判为互斥（缓存键 = caption hash），所以 tag shuffle / dropout 首版不可用，与 Krea2 相同 |
+| M5 | **能力集对齐 Krea2**：`masked_loss`、`text_cache`、`block_swap` | sra / leap / compile_blocks 首版不开；navit 后续开放（2026-10-24，见 §10）。`caption_tag_ops` 与 `cached_varlen` 被 `validate_spec` 判为互斥（缓存键 = caption hash），所以 tag shuffle / dropout 首版不可用，与 Krea2 相同 |
 | M6 | **训练 t 采样默认 logit_normal(0,1) + shift 3.5**，逼近技术报告 Stage-3 末段分布（见下方「训练 t 分布」）。2026-10-24 修订：原定 shift 1 误把 `training_shift=1.0` 当成官方 shift | 只是族默认 overlay（`FAMILY_CONFIG_DEFAULTS`，仅在字段缺失时填入），`timestep_sampling`（logit_normal / uniform / mode / mixed_*）、`timestep_shift`、`timestep_schedule_shift`、`timestep_shift_resolution_aware` 照常可改。已落盘 `timestep_shift` 的存量 version 不受影响 |
 | M7 | **出图对齐 ComfyUI**（用户实际部署环境），而不是官方 diffusers 的 σ 吸附调度 | 负分支跳层对齐 Comfy `SkipLayerGuidanceDiTSimple`（只改 uncond，`single_layers`） |
 | M8 | **TE 缓存指纹包含存储形态**（bf16 / int8_convrot） | 两种 TE 产出的 embedding 有微小差异，切换 TE 时应重建缓存而不是混用。Krea2 现在的指纹不区分 fp8 / bf16，MOSS 不沿用这个做法 |
@@ -230,7 +230,8 @@
 | masked_loss | 开（f8 分辨率，布局 B 下零改动） |
 | text_cache | 开（必需） |
 | block_swap | 开（42 层） |
-| navit / sra / leap / compile_blocks / caption_tag_ops | 关 |
+| navit | 开（后续开放：`forward_packed` 块对角打包，文本 token 计入预算，见 docs/navit-packing.md） |
+| sra / leap / compile_blocks / caption_tag_ops | 关 |
 
 权重常驻量（不含激活，仅供参考，不作承诺）：DiT bf16 10.2GB / int8 5.4GB；TE（只在缓存阶段存活）bf16 16.8GB / int8 9.75GB（含视觉塔，跳过后更小）。
 
@@ -280,7 +281,7 @@ Layout JSON 编辑器、prompt enhancer、参考图 / 编辑能力、少步蒸�
 ## 10. 遗留 / 后续
 
 - `dataset.py` 改为全部经注入的 `latent_spec` 计算（去掉 `_ANIMA_LATENT` 直连）。
-- 批量化 forward（pad + mask，替代逐样本循环）。
+- 批量化 forward（pad + mask，替代逐样本循环）。NaViT 打包已有 `forward_packed`（段拼接、块对角、每层只调一次）；标准路径 batch>1 仍是逐样本循环，开 block swap 时每个样本都会把换出层搬一次（按代码推断，未实测），可改走 `forward_packed`。
 - bf16 底模出图的 parity：如果用户在 ComfyUI 里加载 bf16 文件，Comfy 的 LoRA merge 是浮点直加，我们的旁路与之只差加法顺序，暂不单做。
 - Krea2 的 TE 缓存指纹也区分存储形态（与 M8 对齐）。
 

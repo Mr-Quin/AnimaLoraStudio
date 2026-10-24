@@ -24,6 +24,7 @@ from training.dataset import (
     collate_fn,
     collate_fn_cached,
     collate_fn_navit_pack,
+    dataset_captions,
 )
 
 
@@ -55,6 +56,24 @@ def _rope_max_side_tokens(ctx) -> int:
         return 0
 
 
+def _navit_text_token_counts(ctx) -> list[int] | None:
+    """文本与图像同在自注意力序列的族（提供 ``navit_text_token_count``）的逐索引文本
+    token 数，计入 NaViT 打包预算；文本走 cross-attn 的族返回 None（只算图像 token）。
+
+    同一 caption 只 tokenize 一次（repeat / 分辨率 fan-out 会重复出现）。
+    """
+    count_fn = getattr(ctx.family, "navit_text_token_count", None)
+    if count_fn is None:
+        return None
+    by_caption: dict[str, int] = {}
+    counts = []
+    for caption in dataset_captions(ctx.dataset):
+        if caption not in by_caption:
+            by_caption[caption] = int(count_fn(ctx.text_stack, caption))
+        counts.append(by_caption[caption])
+    return counts
+
+
 def _native_dataset_kwargs(args, ctx) -> dict:
     """navit_native_resolution 开启时给 ImageDataset 的原生定尺寸参数；关闭 → 空 dict（行为中立）。"""
     navit_packing = bool(getattr(args, "navit_packing", False))
@@ -66,6 +85,10 @@ def _native_dataset_kwargs(args, ctx) -> dict:
         native_over_budget=str(getattr(args, "navit_native_over_budget", "downscale") or "downscale"),
         native_max_side_tokens=_rope_max_side_tokens(ctx),
     )
+    # 文本与图像同在序列的族：原生定尺寸给每张图的文本预留预算（与打包预算同口径）
+    count_fn = getattr(ctx.family, "navit_text_token_count", None)
+    if count_fn is not None:
+        kwargs["native_text_tokens"] = lambda caption: count_fn(ctx.text_stack, caption)
     logger.info(msg(
         "train.navit_native_enabled",
         budget=kwargs["native_token_budget"],
@@ -266,6 +289,7 @@ def run(ctx: TrainingContext) -> None:
             strategy=getattr(args, "navit_pack_strategy", "next_fit"),
             # 不用 `or 256`：0 是合法值（全局 FFD，每 epoch 包固定），会被 falsy 吞掉。
             ffd_window=int(getattr(args, "navit_pack_ffd_window", 256)),
+            text_token_counts=_navit_text_token_counts(ctx),
         )
         ctx.dataloader = build_dataloader(
             ctx.dataset, batch_sampler, collate_fn_navit_pack,
