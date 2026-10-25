@@ -53,7 +53,7 @@ def delete_project_files(
     """从项目 `download/` 删除指定文件（含同名 caption metadata）。
 
     metadata 命名约定：
-    - booru 下载会写 `{stem}.booru.txt`
+    - booru 下载会写 `{stem}.booru.json`（分类 tag），开 save_tags 时另写 `{stem}.booru.txt`
     - tag/caption 流程可能写 `{stem}.txt` 或 `{stem}.json`
     都一并清理；不存在的扩展静默跳过。
     """
@@ -69,7 +69,7 @@ def delete_project_files(
     if not pdir.exists():
         return {"deleted": [], "missing": list(body.names)}
 
-    META_EXTS = (".booru.txt", ".txt", ".json")
+    META_EXTS = (".booru.json", ".booru.txt", ".txt", ".json")
     deleted: list[str] = []
     missing: list[str] = []
     for name in body.names:
@@ -124,7 +124,10 @@ def list_files(pid: int, bucket: str = "download") -> dict[str, Any]:
                 items.append({
                     "name": f.name,
                     "size": f.stat().st_size,
-                    "has_meta": f.with_suffix(".booru.txt").exists(),
+                    "has_meta": (
+                        f.with_suffix(".booru.json").exists()
+                        or f.with_suffix(".booru.txt").exists()
+                    ),
                 })
     return {"items": items, "count": len(items)}
 

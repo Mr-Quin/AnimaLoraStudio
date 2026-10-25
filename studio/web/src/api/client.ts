@@ -2801,7 +2801,7 @@ export const api = {
     req<{ items: DownloadFile[]; count: number }>(
       `/api/projects/${pid}/files?bucket=${encodeURIComponent(bucket)}`
     ),
-  /** 从 project 的 download/ 删除指定图片 + 同名 metadata（.booru.txt/.txt/.json）。 */
+  /** 从 project 的 download/ 删除指定图片 + 同名 metadata（.booru.json/.booru.txt/.txt/.json）。 */
   deleteProjectFiles: (pid: number, names: string[]) =>
     req<{ deleted: string[]; missing: string[] }>(
       `/api/projects/${pid}/files/delete`,
