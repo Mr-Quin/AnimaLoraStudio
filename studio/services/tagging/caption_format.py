@@ -1,7 +1,18 @@
 """Caption JSON helpers shared by taggers, workers, and editor views."""
 from __future__ import annotations
 
+import re
 from typing import Any
+
+_BOORU_RATING_TO_ANIMA = {
+    "general": "safe",
+    "sensitive": "sensitive",
+    "questionable": "nsfw",
+    "explicit": "explicit",
+}
+_COUNT_TAG = re.compile(
+    r"^(\d\+?(girl|boy|other)s?|solo|solo_focus|no_humans|multiple_(girls|boys|others))$"
+)
 
 
 def split_tags(value: Any) -> list[str]:
@@ -46,6 +57,41 @@ def _character_full(value: Any) -> str:
         variant = _as_text(value.get("variant"))
         return ", ".join(t for t in (name, variant) if t)
     return _as_text(value)
+
+
+def booru_record_to_caption(record: dict[str, Any]) -> dict[str, Any]:
+    """`{stem}.booru.json` 分类记录 → train-time 标准 caption JSON（Anima 约定）。
+
+    quality = `year N` + 安全等级；人数类 tag 进 count；画师加 `@`；
+    meta tag 不进 caption；下划线转空格。
+    """
+    def human(tags: Any) -> list[str]:
+        return [str(t).replace("_", " ") for t in (tags or []) if str(t).strip()]
+
+    general = [str(t) for t in record.get("general") or []]
+    quality = []
+    if record.get("year"):
+        quality.append(f"year {record['year']}")
+    rating = _BOORU_RATING_TO_ANIMA.get(str(record.get("rating") or ""))
+    if rating:
+        quality.append(rating)
+    meta: dict[str, Any] = {"source": "booru"}
+    if record.get("post_id"):
+        meta["post_id"] = record["post_id"]
+    return {
+        "meta": meta,
+        "tags": {
+            "quality": quality,
+            "count": ", ".join(human(t for t in general if _COUNT_TAG.match(t))),
+            "character": ", ".join(human(record.get("character"))),
+            "series": ", ".join(human(record.get("copyright"))),
+            "artist": ", ".join("@" + t for t in human(record.get("artist"))),
+            "appearance": [],
+            "tags": human(t for t in general if not _COUNT_TAG.match(t)),
+            "environment": [],
+            "nl": "",
+        },
+    }
 
 
 def normalize_caption_json(raw: dict[str, Any] | None) -> dict[str, Any]:

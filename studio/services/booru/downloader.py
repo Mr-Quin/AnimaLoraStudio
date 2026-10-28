@@ -18,6 +18,7 @@ PP9 改造：
 """
 from __future__ import annotations
 
+import json
 import threading
 import time
 from dataclasses import dataclass
@@ -194,6 +195,7 @@ def _download_with_client(
 
         # 收集本页所有「待下载」候选；并发拉图
         candidates: list[tuple[str, str, str, Optional[str], Path]] = []
+        tag_records: dict[Path, dict[str, Any]] = {}
         page_valid = 0
         for post in posts:
             if saved + len(candidates) >= opts.count:
@@ -213,6 +215,7 @@ def _download_with_client(
                 )
                 continue
             candidates.append((post_id, file_url, file_ext, tags_str, target))
+            tag_records[target] = booru_api.post_tag_record(post, opts.api_source)
 
         # 拉图函数（含失败重试）；每张独立调度到 worker pool
         referer = opts.base_url() + "/"
@@ -279,6 +282,9 @@ def _download_with_client(
                     )
                 continue
             assert isinstance(final, Path)
+            final.with_suffix(".booru.json").write_text(
+                json.dumps(tag_records[target], ensure_ascii=False), encoding="utf-8"
+            )
             if opts.save_tags and tags_str:
                 final.with_suffix(".booru.txt").write_text(
                     str(tags_str), encoding="utf-8"

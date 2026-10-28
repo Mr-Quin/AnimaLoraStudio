@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import io
+import json
 import threading
 from pathlib import Path
 from unittest.mock import MagicMock
@@ -9,7 +10,7 @@ from unittest.mock import MagicMock
 import pytest
 from PIL import Image
 
-from studio.services.booru import downloader
+from studio.services.booru import api as booru_api, downloader
 
 
 def _png_bytes(color: tuple[int, int, int] = (255, 0, 0)) -> bytes:
@@ -223,7 +224,7 @@ def test_download_saves_files_with_post_id_names(tmp_path: Path) -> None:
         
     )
     assert n == 3
-    assert sorted(p.name for p in tmp_path.iterdir()) == [
+    assert sorted(p.name for p in tmp_path.glob("*.jpg")) == [
         "11.jpg", "22.jpg", "33.jpg",
     ]
 
@@ -264,7 +265,7 @@ def test_download_stops_when_count_reached(tmp_path: Path) -> None:
         
     )
     assert n == 2
-    assert len(list(tmp_path.iterdir())) == 2
+    assert len(list(tmp_path.glob("*.jpg"))) == 2
 
 
 def test_download_stops_when_page_returns_below_limit(tmp_path: Path) -> None:
@@ -300,6 +301,44 @@ def test_download_writes_booru_tags_when_save_tags(tmp_path: Path) -> None:
         session=sess, page_delay=0,
     )
     assert (tmp_path / "11.booru.txt").read_text(encoding="utf-8") == "1girl solo"
+
+
+def test_download_always_writes_booru_tag_record(tmp_path: Path) -> None:
+    posts = [
+        {"@attributes": {
+            "id": 12, "file_url": "http://x/12.jpg", "file_ext": "jpg",
+            "tags": "1girl solo", "rating": "questionable",
+            "created_at": "Sat Oct 04 12:00:00 -0500 2025",
+        }},
+    ]
+    sess = FakeSession([posts], _png_bytes())
+    downloader.download(
+        _opts(count=1), tmp_path, on_progress=lambda _: None,
+        session=sess, page_delay=0,
+    )
+    record = json.loads((tmp_path / "12.booru.json").read_text(encoding="utf-8"))
+    assert record["rating"] == "questionable"
+    assert record["year"] == 2025
+    assert record["general"] == ["1girl", "solo"]
+    assert not (tmp_path / "12.booru.txt").exists()
+
+
+def test_post_tag_record_danbooru_keeps_categories() -> None:
+    post = {
+        "id": 7, "rating": "e", "created_at": "2024-03-01T10:00:00.000-05:00",
+        "tag_string_artist": "some_artist",
+        "tag_string_character": "char_(series)",
+        "tag_string_copyright": "series",
+        "tag_string_general": "1girl long_hair",
+        "tag_string_meta": "highres",
+    }
+    record = booru_api.post_tag_record(post, "danbooru")
+    assert record == {
+        "source": "danbooru", "post_id": "7", "rating": "explicit", "year": 2024,
+        "artist": ["some_artist"], "character": ["char_(series)"],
+        "copyright": ["series"], "general": ["1girl", "long_hair"],
+        "meta": ["highres"],
+    }
 
 
 # ---------------------------------------------------------------------------

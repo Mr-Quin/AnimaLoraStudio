@@ -81,6 +81,44 @@ def test_copy_download_to_train_copies_caption(env) -> None:
     assert (_train(env) / "Y.json").read_text() == '{"k":1}'
 
 
+def test_copy_download_to_train_builds_caption_from_booru_record(env) -> None:
+    import json
+
+    _dl(env, "Z.png")
+    (_pdir(env) / "download" / "Z.booru.json").write_text(json.dumps({
+        "source": "danbooru", "post_id": "9", "rating": "general", "year": 2023,
+        "artist": ["an_artist"], "character": ["a_char"], "copyright": ["a_series"],
+        "general": ["2girls", "long_hair", "smile"], "meta": ["highres"],
+    }))
+    with db.connection_for(env["db"]) as conn:
+        curation.copy_download_to_train(
+            conn, env["p"]["id"], env["v"]["id"],
+            files=["Z.png"], dest_folder="1_data",
+        )
+    caption = json.loads((_train(env) / "Z.json").read_text(encoding="utf-8"))
+    assert caption["tags"]["quality"] == ["year 2023", "safe"]
+    assert caption["tags"]["count"] == "2girls"
+    assert caption["tags"]["character"] == "a char"
+    assert caption["tags"]["series"] == "a series"
+    assert caption["tags"]["artist"] == "@an artist"
+    assert caption["tags"]["tags"] == ["long hair", "smile"]
+    assert caption["meta"] == {"source": "booru", "post_id": "9"}
+    assert not (_train(env) / "Z.booru.json").exists()
+
+
+def test_copy_download_to_train_existing_caption_wins_over_booru_record(env) -> None:
+    _dl(env, "W.png")
+    (_pdir(env) / "download" / "W.txt").write_text("hand, written")
+    (_pdir(env) / "download" / "W.booru.json").write_text('{"general": ["x"]}')
+    with db.connection_for(env["db"]) as conn:
+        curation.copy_download_to_train(
+            conn, env["p"]["id"], env["v"]["id"],
+            files=["W.png"], dest_folder="1_data",
+        )
+    assert (_train(env) / "W.txt").read_text() == "hand, written"
+    assert not (_train(env) / "W.json").exists()
+
+
 def test_copy_download_to_train_skips_existing(env) -> None:
     _dl(env, "Z.jpg")
     dst = _train(env)

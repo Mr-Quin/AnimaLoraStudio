@@ -13,6 +13,7 @@
 """
 from __future__ import annotations
 
+import re
 from io import BytesIO
 from pathlib import Path
 from typing import Any, Optional
@@ -149,6 +150,44 @@ def post_fields(
         str(post.get("file_ext", "jpg")),
         post.get("tag_string") or post.get("tags"),
     )
+
+
+# danbooru 用单字母，gelbooru 用全称；老 gelbooru 帖子的 `safe` 等同 general。
+_RATING_NAMES = {
+    "g": "general", "general": "general", "safe": "general",
+    "s": "sensitive", "sensitive": "sensitive",
+    "q": "questionable", "questionable": "questionable",
+    "e": "explicit", "explicit": "explicit",
+}
+
+
+def post_tag_record(post: dict[str, Any], api_source: str) -> dict[str, Any]:
+    """抽帖子的分类 tag 记录，落盘为 `{stem}.booru.json`，curation 据此生成 caption。
+
+    tag 保持 booru 原样（小写、下划线）。gelbooru 的帖子接口不带 tag 分类，
+    全部归入 general。
+    """
+    src = post["@attributes"] if api_source == "gelbooru" and "@attributes" in post else post
+    created_at = str(src.get("created_at") or "")
+    years = re.findall(r"\b(?:19|20)\d{2}\b", created_at)
+    year = int(created_at[:4]) if re.match(r"\d{4}-", created_at) else (int(years[-1]) if years else None)
+    record: dict[str, Any] = {
+        "source": api_source,
+        "post_id": str(src.get("id")) if src.get("id") is not None else None,
+        "rating": _RATING_NAMES.get(str(src.get("rating") or "").lower(), ""),
+        "year": year,
+        "artist": [],
+        "character": [],
+        "copyright": [],
+        "general": [],
+        "meta": [],
+    }
+    if api_source == "gelbooru":
+        record["general"] = str(src.get("tags") or "").split()
+    else:
+        for key in ("artist", "character", "copyright", "general", "meta"):
+            record[key] = str(post.get(f"tag_string_{key}") or "").split()
+    return record
 
 
 def post_dimensions(

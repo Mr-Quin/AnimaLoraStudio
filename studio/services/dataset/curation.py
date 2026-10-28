@@ -17,6 +17,7 @@
 """
 from __future__ import annotations
 
+import json
 import re
 import shutil
 from pathlib import Path
@@ -26,6 +27,7 @@ from ..projects import projects, versions
 from .scan import IMAGE_EXTS
 from ..preprocess import manifest as preprocess_manifest
 from ..preprocess import masks as train_masks
+from ..tagging.caption_format import booru_record_to_caption
 
 # Kohya: 可选 `N_` 前缀 + 字母（不允许纯数字 / `5_` 这种空 label）
 _FOLDER_PATTERN = re.compile(r"^([0-9]+_)?[A-Za-z][A-Za-z0-9_-]*$")
@@ -302,6 +304,23 @@ def curation_validation_view(
 _META_EXTS = (".txt", ".json")
 
 
+def _write_booru_caption(record_path: Path, caption_path: Path) -> None:
+    """下载时存的 booru 分类 tag → train caption；没有记录或读失败就跳过（留给打标）。"""
+    try:
+        record = json.loads(record_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return
+    if not isinstance(record, dict):
+        return
+    caption = booru_record_to_caption(record)
+    try:
+        caption_path.write_text(
+            json.dumps(caption, ensure_ascii=False, indent=2), encoding="utf-8",
+        )
+    except OSError:
+        pass
+
+
 def copy_download_to_train(
     conn,
     project_id: int,
@@ -319,7 +338,8 @@ def copy_download_to_train(
       origin = name（curate 阶段图是原图未处理；后续 preprocess 在 train/
       原地处理时再 update entry）
     - caption (.txt/.json) 仍从 `download/{stem}.{ext}` 复制到
-      `train/{dest_folder}/{stem}.{ext}`
+      `train/{dest_folder}/{stem}.{ext}`；都没有时，用下载存的
+      `{stem}.booru.json` 生成 `{stem}.json`
     - 不消费 / 不感知 preprocess 派生（multi-crop fan-out 在新模型下发生在
       curate 之后的 preprocess phase）
 
@@ -349,13 +369,19 @@ def copy_download_to_train(
         shutil.copy2(src, dst)
         # caption metadata 跟随
         stem = Path(name).stem
+        has_caption = False
         for ext in _META_EXTS:
             sm = download_dir / f"{stem}{ext}"
             if sm.exists():
                 try:
                     shutil.copy2(sm, dst_dir / f"{stem}{ext}")
+                    has_caption = True
                 except OSError:
                     pass
+        if not has_caption:
+            _write_booru_caption(
+                download_dir / f"{stem}.booru.json", dst_dir / f"{stem}.json",
+            )
         # 写 train manifest entry，key = "{folder}/{name}"
         rel = f"{dest_folder}/{name}"
         meta: dict[str, Any] = {"origin": name}
