@@ -14,6 +14,7 @@ import Button from '../../../components/Button'
 import Card from '../../../components/Card'
 import { useDialog } from '../../../components/Dialog'
 import EmptyState from '../../../components/EmptyState'
+import { Input } from '../../../components/FormControl'
 import ImageGrid, { applySelection } from '../../../components/ImageGrid'
 import PaneResizer, { normalizePanePair } from '../../../components/PaneResizer'
 import SaveBar from '../../../components/SaveBar'
@@ -49,6 +50,24 @@ interface CaptionMeta {
   hasEffectiveCaption: boolean
 }
 
+const TAG_FILTER_LIST_ID = 'tag-edit-tag-filter-options'
+
+// "a, b, -c" = images that have a and b but not c.
+export function parseTagFilter(text: string): { include: string[]; exclude: string[] } {
+  const include: string[] = []
+  const exclude: string[] = []
+  for (const raw of text.split(',')) {
+    const token = raw.trim()
+    if (token.startsWith('-')) {
+      const tag = token.slice(1).trim()
+      if (tag) exclude.push(tag)
+    } else if (token) {
+      include.push(token)
+    }
+  }
+  return { include, exclude }
+}
+
 function arraysEqual(a: string[], b: string[]): boolean {
   if (a.length !== b.length) return false
   for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false
@@ -81,6 +100,7 @@ export default function TagEditPage() {
   // '' = 全部；否则限定到该 folder（1_data / 2_data ...）。命名特意区分于下面
   // editing 时用的 `activeFolder`（那个是当前编辑图所在 folder，纯展示）。
   const [folderFilter, setFolderFilter] = useState<string>('')
+  const [tagFilter, setTagFilter] = useState<string>('')
 
   // 左栏（图片网格）/ 右栏（标签工作区）各占整行宽度的百分比，两条分隔条可拖；
   // 中间预览栏 flex-1 吃掉剩余空间。默认 40 / 32 = 改造前写死的 flex 1.5 : 1 : 32%。
@@ -171,6 +191,7 @@ export default function TagEditPage() {
     setSel(new Set())
     setAnchor(null)
     setFolderFilter('')
+    setTagFilter('')
     void reloadCache('initial')
   }, [reloadCache])
 
@@ -280,10 +301,33 @@ export default function TagEditPage() {
     }
   }, [folderFilter, folderNames, keys])
 
-  const filteredKeys = useMemo(() => {
+  const folderKeys = useMemo(() => {
     if (!folderFilter) return keys
     return keys.filter((k) => meta.get(k)?.folder === folderFilter)
   }, [keys, meta, folderFilter])
+
+  const parsedTagFilter = useMemo(() => parseTagFilter(tagFilter), [tagFilter])
+  const filteredKeys = useMemo(() => {
+    const { include, exclude } = parsedTagFilter
+    if (include.length === 0 && exclude.length === 0) return folderKeys
+    return folderKeys.filter((k) => {
+      const tags = cache.get(k) ?? []
+      return include.every((tag) => tags.includes(tag)) && !exclude.some((tag) => tags.includes(tag))
+    })
+  }, [folderKeys, cache, parsedTagFilter])
+
+  const tagFilterOptions = useMemo(() => {
+    const counts = new Map<string, number>()
+    for (const k of folderKeys) {
+      for (const tag of cache.get(k) ?? []) counts.set(tag, (counts.get(tag) ?? 0) + 1)
+    }
+    const cut = tagFilter.lastIndexOf(',')
+    const prefix = cut < 0 ? '' : `${tagFilter.slice(0, cut + 1)} `
+    const negate = tagFilter.slice(cut + 1).trim().startsWith('-') ? '-' : ''
+    return Array.from(counts.entries())
+      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+      .map(([tag, n]) => ({ value: `${prefix}${negate}${tag}`, n }))
+  }, [folderKeys, cache, tagFilter])
 
   const captionItems = useMemo(
     () =>
@@ -684,6 +728,22 @@ export default function TagEditPage() {
                 layout="content"
               />
             )}
+            <Input
+              type="search"
+              value={tagFilter}
+              onChange={(e) => { setTagFilter(e.target.value); setAnchor(null) }}
+              list={TAG_FILTER_LIST_ID}
+              placeholder={t('tagEdit.tagFilterPlaceholder')}
+              aria-label={t('tagEdit.tagFilterLabel')}
+              controlSize="sm"
+              mono
+              className="w-full"
+            />
+            <datalist id={TAG_FILTER_LIST_ID}>
+              {tagFilterOptions.map((o) => (
+                <option key={o.value} value={o.value}>{o.n}</option>
+              ))}
+            </datalist>
           </div>
           <ImageGrid
             className="flex-1 min-h-0"
@@ -696,9 +756,11 @@ export default function TagEditPage() {
             clickMode={sel.size > 0 ? 'select' : 'activate'}
             ariaLabel={t('tagEdit.gridLabel')}
             emptyHint={
-              folderFilter
-                ? t('tagEdit.noImagesInFolder', { folder: folderFilter })
-                : t('tagEdit.noImagesHint')
+              tagFilter.trim()
+                ? t('tagEdit.noImagesWithTag', { tag: tagFilter.trim() })
+                : folderFilter
+                  ? t('tagEdit.noImagesInFolder', { folder: folderFilter })
+                  : t('tagEdit.noImagesHint')
             }
           />
         </Card>

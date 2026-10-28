@@ -2138,6 +2138,8 @@
     "imageListTitle": "Training images",
     "visibleCount": "{{n}} images",
     "folderFilterLabel": "Training folder filter",
+    "tagFilterLabel": "Filter images by tag",
+    "tagFilterPlaceholder": "Filter by tag: a, b, -c",
     "gridLabel": "Training image tag-editing list",
     "loading": "Loading captions…",
     "loadErrorTitle": "Captions failed to load",

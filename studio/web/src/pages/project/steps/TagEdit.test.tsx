@@ -420,6 +420,32 @@ describe('TagEdit workspace', () => {
     expect(screen.queryByRole('button', { name: '选择 人物 A/a1.png' })).not.toBeInTheDocument()
   })
 
+  it('shows only images matching the tag filter, with exclusions, inside the folder scope', async () => {
+    const user = userEvent.setup()
+    renderPage()
+    await ready()
+
+    const filter = screen.getByRole('combobox', { name: '按标签筛选图片' })
+    await user.type(filter, 'cat')
+    expect(screen.getByRole('button', { name: '选择 人物 A/a1.png' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '选择 人物 B/b1.png' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '选择 人物 A/a2.png' })).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('radio', { name: /人物 B/ }))
+    expect(screen.queryByRole('button', { name: '选择 人物 A/a1.png' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '选择 人物 B/b1.png' })).toBeInTheDocument()
+
+    await user.click(screen.getByRole('radio', { name: /全部/ }))
+    await user.clear(filter)
+    await user.type(filter, '-cat')
+    expect(screen.getByRole('button', { name: '选择 人物 A/a2.png' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '选择 人物 A/a1.png' })).not.toBeInTheDocument()
+
+    await user.clear(filter)
+    await user.type(filter, 'cat, dog')
+    expect(screen.getByText('没有图含「cat, dog」')).toBeInTheDocument()
+  })
+
   it('selects matching images across folders while the All scope is active', async () => {
     const user = userEvent.setup()
     renderPage()
