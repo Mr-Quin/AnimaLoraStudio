@@ -2131,6 +2131,12 @@
     "exportSavedToDataExports": "Saved to data_exports: {{filename}} ({{path}})",
     "exportBundleAtLeastOne": "Select at least one item to export"
   },
+  "captionDetails": {
+    "nlLabel": "Description",
+    "nlPlaceholder": "Natural-language description, appended after the tags",
+    "txtHint": "This caption is a .txt file, so it holds tags only. JSON captions also keep a description.",
+    "jsonTitle": "Caption JSON (as saved)"
+  },
   "tagEdit": {
     "title": "Tag edit",
     "subtitle": "Batch edit tags · stage locally · write on save",

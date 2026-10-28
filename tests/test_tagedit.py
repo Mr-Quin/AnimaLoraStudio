@@ -124,6 +124,84 @@ def test_write_documented_json_makes_editor_tags_authoritative(train_dir: Path) 
     assert caption_json_to_text(written) == "ohwx, new tag. old prose"
 
 
+def _standard(image: Path, tags: dict, meta: dict | None = None) -> Path:
+    p = image.with_suffix(".json")
+    p.write_text(json.dumps({"meta": meta or {}, "tags": tags}, ensure_ascii=False), encoding="utf-8")
+    return p
+
+
+def test_read_standard_json_splits_joined_categories(train_dir: Path) -> None:
+    f = _img(train_dir / "5_a", "1.png")
+    _standard(f, {
+        "quality": ["year 2025", "safe"],
+        "count": "1girl, solo",
+        "character": "a (x), b (y)",
+        "tags": ["collar"],
+        "nl": "A dog-eared girl.",
+    })
+    assert tagedit.read_tags(f) == ["year 2025", "safe", "1girl", "solo", "a (x)", "b (y)", "collar"]
+
+
+def test_write_standard_json_keeps_categories_and_description(train_dir: Path) -> None:
+    f = _img(train_dir / "5_a", "1.png")
+    p = _standard(
+        f,
+        {
+            "quality": ["year 2025", "safe"],
+            "count": "1girl, solo",
+            "appearance": ["long hair", "red eyes"],
+            "tags": ["collar", "leash"],
+            "environment": ["indoors"],
+            "nl": "A quiet scene.",
+            "extra": "kept",
+        },
+        meta={"trigger": "sks"},
+    )
+
+    tagedit.write_tags(f, ["safe", "1girl", "red eyes", "leash", "collar", "new tag"])
+
+    written = json.loads(p.read_text(encoding="utf-8"))
+    assert written["meta"] == {"trigger": "sks"}
+    assert written["tags"] == {
+        "quality": ["safe"],
+        "count": "1girl",
+        "appearance": ["red eyes"],
+        "tags": ["leash", "collar", "new tag"],
+        "environment": [],
+        "nl": "A quiet scene.",
+        "extra": "kept",
+    }
+    assert caption_json_to_text(written) == "safe, 1girl, red eyes, leash, collar, new tag. A quiet scene."
+
+
+@pytest.mark.parametrize(("content", "where"), [
+    ({"meta": {}, "tags": {"tags": ["a"], "nl": "old"}}, ("tags", "nl")),
+    ({"ai_output": {"tags": ["a"], "nl": "old"}}, ("ai_output", "nl")),
+    ({"tags": ["a"], "nl": "old"}, ("nl",)),
+])
+def test_write_replaces_description_where_the_shape_keeps_it(
+    train_dir: Path, content: dict, where: tuple[str, ...],
+) -> None:
+    f = _img(train_dir / "5_a", "1.png")
+    p = f.with_suffix(".json")
+    p.write_text(json.dumps(content), encoding="utf-8")
+
+    tagedit.write_tags(f, ["a"], nl="new")
+
+    written = json.loads(p.read_text(encoding="utf-8"))
+    for key in where:
+        written = written[key]
+    assert written == "new"
+    assert tagedit.caption_nl(tagedit.read_caption_json(f)) == "new"
+
+
+def test_write_txt_ignores_description(train_dir: Path) -> None:
+    f = _img(train_dir / "5_a", "1.png")
+    _txt(f, "a")
+    assert tagedit.write_tags(f, ["a", "b"], nl="ignored").read_text(encoding="utf-8") == "a, b"
+    assert tagedit.read_caption_json(f) is None
+
+
 def test_read_missing_returns_empty(train_dir: Path) -> None:
     f = _img(train_dir / "5_a", "noaption.png")
     assert tagedit.read_tags(f) == []

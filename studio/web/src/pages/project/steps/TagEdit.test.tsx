@@ -125,7 +125,12 @@ vi.mock('../../../components/TagStatsPanel', () => ({
 const captions = {
   folder: null,
   items: [
-    { folder: '人物 A', name: 'a1.png', tags: ['cat'], format: 'json' as const, tag_count: 1, tags_preview: ['cat'], has_caption: true, has_effective_caption: true },
+    {
+      folder: '人物 A', name: 'a1.png', tags: ['cat'], format: 'json' as const, tag_count: 1, tags_preview: ['cat'],
+      has_caption: true, has_effective_caption: true,
+      caption: { meta: { trigger: 'sks' }, tags: { count: '1girl', tags: ['cat'], nl: 'A cat sleeps.' } },
+      nl: 'A cat sleeps.',
+    },
     { folder: '人物 A', name: 'a2.png', tags: ['dog'], format: 'txt' as const, tag_count: 1, tags_preview: ['dog'], has_caption: true, has_effective_caption: true },
     { folder: '人物 B', name: 'b1.png', tags: ['cat'], format: 'txt' as const, tag_count: 1, tags_preview: ['cat'], has_caption: true, has_effective_caption: true },
   ],
@@ -601,6 +606,37 @@ describe('TagEdit workspace', () => {
       name: 'a1.png',
       tags: ['cat', 'latest'],
     }]))
+  })
+
+  it('edits the JSON description and saves it with the tags', async () => {
+    const user = userEvent.setup()
+    renderPage()
+    await ready()
+
+    await user.click(screen.getByRole('button', { name: '打开 人物 A/a1.png' }))
+    const description = screen.getByRole('textbox', { name: '描述' })
+    expect(description).toHaveValue('A cat sleeps.')
+    expect(screen.getByText('trigger')).toBeInTheDocument()
+
+    fireEvent.change(description, { target: { value: 'A cat wakes up.' } })
+    await user.click(screen.getByRole('button', { name: '保存（1）' }))
+
+    await waitFor(() => expect(api.commitCaptions).toHaveBeenCalledWith(7, 11, [{
+      folder: '人物 A',
+      name: 'a1.png',
+      tags: ['cat'],
+      nl: 'A cat wakes up.',
+    }]))
+  })
+
+  it('shows no description box for txt captions', async () => {
+    const user = userEvent.setup()
+    renderPage()
+    await ready()
+
+    await user.click(screen.getByRole('button', { name: '打开 人物 A/a2.png' }))
+    expect(screen.queryByRole('textbox', { name: '描述' })).not.toBeInTheDocument()
+    expect(screen.getByText(/只存标签/)).toBeInTheDocument()
   })
 
   it('marks the dataset and active image as unsaved, then clears both after save', async () => {

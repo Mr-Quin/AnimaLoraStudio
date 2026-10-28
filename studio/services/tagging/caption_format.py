@@ -189,19 +189,43 @@ def normalize_caption_json(raw: dict[str, Any] | None) -> dict[str, Any]:
     }
 
 
+TAG_CATEGORIES = (
+    "quality", "count", "character", "series", "artist", "appearance", "tags", "environment",
+)
+
+
 def caption_json_to_tags(caption: dict[str, Any] | None) -> list[str]:
     data = normalize_caption_json(caption)
     tags = data.get("tags", {})
     out: list[str] = []
-    for key in ("quality",):
-        out.extend(split_tags(tags.get(key)))
-    for key in ("count", "character", "series", "artist"):
-        text = _as_text(tags.get(key))
-        if text:
-            out.append(text)
-    for key in ("appearance", "tags", "environment"):
+    for key in TAG_CATEGORIES:
         out.extend(split_tags(tags.get(key)))
     return split_tags(out)
+
+
+def apply_editor_tags(tags_obj: dict[str, Any], editor_tags: list[str]) -> dict[str, Any]:
+    """Fold an edited flat tag list back into a categorized ``tags`` object.
+
+    Tags that survive the edit stay in their category, in the editor's order;
+    removed ones drop out; new ones join the general ``tags`` list. String-valued
+    categories (count, character, ...) stay comma-joined strings, and ``nl`` and
+    any unknown keys are kept as they are.
+    """
+    wanted = split_tags(editor_tags)
+    order = {t.lower(): i for i, t in enumerate(wanted)}
+    unplaced = {t.lower(): t for t in wanted}
+    out = dict(tags_obj)
+    for key in TAG_CATEGORIES:
+        if key not in tags_obj:
+            continue
+        kept = [unplaced.pop(t.lower()) for t in split_tags(tags_obj.get(key)) if t.lower() in unplaced]
+        kept.sort(key=lambda t: order[t.lower()])
+        out[key] = ", ".join(kept) if isinstance(tags_obj.get(key), str) else kept
+    if unplaced:
+        general = split_tags(out.get("tags"))
+        general.extend(t for t in wanted if t.lower() in unplaced)
+        out["tags"] = general
+    return out
 
 
 def caption_json_to_text(caption: dict[str, Any] | None) -> str:

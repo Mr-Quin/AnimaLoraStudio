@@ -1455,12 +1455,17 @@ export interface CaptionPreview {
 export interface CaptionEntry extends CaptionPreview {
   tags: string[]
   format: 'txt' | 'json' | 'none'
+  /** The JSON caption as stored on disk; null for txt or missing captions. */
+  caption?: Record<string, unknown> | null
+  nl?: string
 }
 
 export interface CommitItem {
   folder: string
   name: string
   tags: string[]
+  /** Replaces the JSON caption's natural-language description; omitted = unchanged. */
+  nl?: string
 }
 
 export interface CommitResult {
@@ -1473,6 +1478,8 @@ export interface CommitResult {
     name: string
     format: 'txt' | 'json'
     has_effective_caption: boolean
+    caption?: Record<string, unknown> | null
+    nl?: string
   }>
 }
 

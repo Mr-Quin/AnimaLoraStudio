@@ -2131,6 +2131,12 @@
     "exportSavedToDataExports": "已保存到 data_exports: {{filename}}（{{path}}）",
     "exportBundleAtLeastOne": "至少选择一项导出内容"
   },
+  "captionDetails": {
+    "nlLabel": "描述",
+    "nlPlaceholder": "自然语言描述，训练时接在标签后面",
+    "txtHint": "这个 caption 是 .txt 文件，只存标签。JSON caption 才有描述。",
+    "jsonTitle": "Caption JSON（已保存的内容）"
+  },
   "tagEdit": {
     "title": "标签编辑",
     "subtitle": "批量编辑标签 · 暂存本地 · 保存后写盘",
