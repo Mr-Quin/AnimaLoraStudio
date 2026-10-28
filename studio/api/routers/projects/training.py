@@ -269,12 +269,15 @@ def commit_captions(pid: int, vid: int, body: CommitRequest) -> dict[str, Any]:
         if not img.exists():
             skipped.append(f"{it.folder}/{it.name}")
             continue
-        path = tagedit.write_tags(img, it.tags)
+        path = tagedit.write_tags(img, it.tags, it.nl)
+        caption = tagedit.read_caption_json(img)
         items.append({
             "folder": it.folder,
             "name": it.name,
             "format": path.suffix.lstrip("."),
             "has_effective_caption": tagedit.has_effective_caption(img),
+            "caption": caption,
+            "nl": tagedit.caption_nl(caption),
         })
         written += 1
     return {"snapshot": snap, "written": written, "skipped": skipped, "items": items}

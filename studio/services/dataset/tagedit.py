@@ -17,7 +17,12 @@ from pathlib import Path
 from typing import Any, Iterable, Literal
 
 from .scan import IMAGE_EXTS
-from ..tagging.caption_format import caption_json_to_tags, caption_json_to_text
+from ..tagging.caption_format import (
+    apply_editor_tags,
+    caption_json_to_tags,
+    caption_json_to_text,
+    normalize_caption_json,
+)
 
 ScopeKind = Literal["all", "folder", "files"]
 
@@ -96,12 +101,42 @@ def read_tags(image: Path) -> list[str]:
     return [t.strip() for t in text.split(",") if t.strip()]
 
 
-def write_tags(image: Path, tags: list[str]) -> Path:
+def read_caption_json(image: Path) -> dict[str, Any] | None:
+    """The image's JSON caption as stored, or None for txt / missing / broken files."""
+    p = caption_path(image)
+    if p is None or p.suffix != ".json":
+        return None
+    try:
+        data = json.loads(p.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def caption_nl(data: dict[str, Any] | None) -> str:
+    if data is None:
+        return ""
+    return str(normalize_caption_json(data)["tags"].get("nl") or "")
+
+
+def _set_caption_nl(data: dict[str, Any], nl: str) -> None:
+    if isinstance(data.get("tags"), dict):
+        data["tags"]["nl"] = nl
+    elif isinstance(data.get("ai_output"), dict):
+        data["ai_output"]["nl"] = nl
+    else:
+        data["nl"] = nl
+
+
+def write_tags(image: Path, tags: list[str], nl: str | None = None) -> Path:
     """Write editable tags, retaining the sidecar and non-editor JSON fields.
 
-    Empty tags persist as empty content rather than deleting the caption.  JSON's
-    flat list remains authoritative, including when empty; descriptions and trigger
-    metadata are preserved for both individual edits and batch operations.
+    Empty tags persist as empty content rather than deleting the caption.  A
+    categorized JSON caption keeps its categories (see ``apply_editor_tags``);
+    other JSON shapes take the flat list as authoritative.  Descriptions and
+    trigger metadata are preserved for both individual edits and batch
+    operations.  ``nl`` replaces the description of a JSON caption; txt captions
+    have nowhere to keep one, so it is ignored there.
     """
     js = image.with_suffix(".json")
     if js.exists():
@@ -111,7 +146,12 @@ def write_tags(image: Path, tags: list[str]) -> Path:
             data = {}
         if not isinstance(data, dict):
             data = {}
-        data["tags"] = list(tags)
+        if isinstance(data.get("tags"), dict):
+            data["tags"] = apply_editor_tags(data["tags"], list(tags))
+        else:
+            data["tags"] = list(tags)
+        if nl is not None:
+            _set_caption_nl(data, nl)
         js.write_text(
             json.dumps(data, ensure_ascii=False, indent=2),
             encoding="utf-8",
@@ -312,6 +352,9 @@ def list_captions_in_folder(
                 else "txt" if cap_path
                 else "none"
             )
+            caption = read_caption_json(img)
+            item["caption"] = caption
+            item["nl"] = caption_nl(caption)
         out.append(item)
     return out
 

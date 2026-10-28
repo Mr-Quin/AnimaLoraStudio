@@ -11,6 +11,7 @@ import Alert from '../../../components/Alert'
 import Badge from '../../../components/Badge'
 import BulkActionBar from '../../../components/BulkActionBar'
 import Button from '../../../components/Button'
+import CaptionDetails from '../../../components/CaptionDetails'
 import Card from '../../../components/Card'
 import { useDialog } from '../../../components/Dialog'
 import EmptyState from '../../../components/EmptyState'
@@ -87,6 +88,9 @@ export default function TagEditPage() {
   const reloadRequestRef = useRef(0)
   const saveInFlightRef = useRef(false)
   const [initial, setInitial] = useState<Map<string, string[]>>(new Map())
+  const [nlCache, setNlCache] = useState<Map<string, string>>(new Map())
+  const [nlInitial, setNlInitial] = useState<Map<string, string>>(new Map())
+  const [captionJson, setCaptionJson] = useState<Map<string, Record<string, unknown> | null>>(new Map())
   const [meta, setMeta] = useState<Map<string, CaptionMeta>>(new Map())
   const [keys, setKeys] = useState<string[]>([])
   const [hasLoaded, setHasLoaded] = useState(false)
@@ -143,6 +147,8 @@ export default function TagEditPage() {
         return false
       }
       const c = new Map<string, string[]>()
+      const nl = new Map<string, string>()
+      const cj = new Map<string, Record<string, unknown> | null>()
       const m = new Map<string, CaptionMeta>()
       const ks: string[] = []
       const sorted = [...r.items].sort((a, b) =>
@@ -151,6 +157,8 @@ export default function TagEditPage() {
       for (const it of sorted) {
         const k = keyOf(it.folder, it.name)
         c.set(k, it.tags)
+        nl.set(k, it.nl ?? '')
+        cj.set(k, it.caption ?? null)
         m.set(k, {
           folder: it.folder,
           name: it.name,
@@ -161,6 +169,9 @@ export default function TagEditPage() {
       }
       setCache(c)
       setInitial(new Map(c))
+      setNlCache(nl)
+      setNlInitial(new Map(nl))
+      setCaptionJson(cj)
       setMeta(m)
       setKeys(ks)
       setHasLoaded(true)
@@ -181,6 +192,9 @@ export default function TagEditPage() {
   useEffect(() => {
     setCache(new Map())
     setInitial(new Map())
+    setNlCache(new Map())
+    setNlInitial(new Map())
+    setCaptionJson(new Map())
     setMeta(new Map())
     setKeys([])
     setHasLoaded(false)
@@ -200,10 +214,10 @@ export default function TagEditPage() {
     for (const k of keys) {
       const cur = cache.get(k) ?? []
       const ini = initial.get(k) ?? []
-      if (!arraysEqual(cur, ini)) out.push(k)
+      if (!arraysEqual(cur, ini) || (nlCache.get(k) ?? '') !== (nlInitial.get(k) ?? '')) out.push(k)
     }
     return out
-  }, [cache, initial, keys])
+  }, [cache, initial, nlCache, nlInitial, keys])
   const dirty = dirtyKeys.length > 0
   const dirtyKeySet = useMemo(() => new Set(dirtyKeys), [dirtyKeys])
   dirtyRef.current = dirty
@@ -417,6 +431,15 @@ export default function TagEditPage() {
     })
   }
 
+  const updateActiveNl = (nl: string) => {
+    if (!activeKey) return
+    editRevisionRef.current += 1
+    dirtyRef.current = true
+    setNlCache((prev) => {
+      const next = new Map(prev); next.set(activeKey, nl); return next
+    })
+  }
+
   const applyBulkUpdates = (updates: Map<string, string[]>) => {
     if (updates.size === 0) return
     editRevisionRef.current += 1
@@ -493,12 +516,16 @@ export default function TagEditPage() {
     const editRevisionAtSave = editRevisionRef.current
     const items: CommitItem[] = dirtyKeys.map((k) => {
       const m = meta.get(k)!
-      return { folder: m.folder, name: m.name, tags: [...(cache.get(k) ?? [])] }
+      const item: CommitItem = { folder: m.folder, name: m.name, tags: [...(cache.get(k) ?? [])] }
+      const nl = nlCache.get(k) ?? ''
+      if (nl !== (nlInitial.get(k) ?? '')) item.nl = nl
+      return item
     })
     const submitted = new Map(items.map((item) => [
       keyOf(item.folder, item.name),
       [...item.tags],
     ]))
+    const submittedNl = new Map(items.map((item) => [keyOf(item.folder, item.name), item.nl]))
     saveInFlightRef.current = true
     try {
       const r = await api.commitCaptions(project.id, versionId, items)
@@ -512,6 +539,22 @@ export default function TagEditPage() {
       const persisted = new Map((r.items ?? []).map((item) => [
         keyOf(item.folder, item.name), item,
       ]))
+      setNlInitial((prev) => {
+        const next = new Map(prev)
+        for (const k of writtenKeys) {
+          const nl = submittedNl.get(k)
+          if (nl !== undefined) next.set(k, nl)
+        }
+        return next
+      })
+      setCaptionJson((prev) => {
+        const next = new Map(prev)
+        for (const k of writtenKeys) {
+          const state = persisted.get(k)
+          if (state && state.caption !== undefined) next.set(k, state.caption)
+        }
+        return next
+      })
       setMeta((prev) => {
         const next = new Map(prev)
         for (const k of writtenKeys) {
@@ -593,6 +636,7 @@ export default function TagEditPage() {
   const activeFolder = activeMeta?.folder ?? ''
   const activeName = activeMeta?.name ?? ''
   const activeTags = activeKey ? cache.get(activeKey) ?? [] : []
+  const activeNl = activeKey ? nlCache.get(activeKey) ?? '' : ''
   const activeDirty = activeKey ? dirtyKeySet.has(activeKey) : false
 
   const isEditing = Boolean(activeKey)
@@ -890,6 +934,15 @@ export default function TagEditPage() {
                   onChange={updateActiveTags}
                   showTagCount={false}
                 />
+                <div className="shrink-0 max-h-[50%] overflow-y-auto border-t border-subtle pt-related">
+                  <CaptionDetails
+                    key={activeKey}
+                    format={activeMeta?.format ?? 'none'}
+                    nl={activeNl}
+                    onNlChange={updateActiveNl}
+                    caption={captionJson.get(activeKey)}
+                  />
+                </div>
               </div>
             </Card>
           ) : (

@@ -662,7 +662,7 @@ def test_commit_empty_tags_keeps_caption_and_snapshot_restores_content(
     assert caption == {"name": "a.png", "tags": [], "format": "txt"}
     assert result["items"] == [{
         "folder": "1_data", "name": "a.png", "format": "txt",
-        "has_effective_caption": False,
+        "has_effective_caption": False, "caption": None, "nl": "",
     }]
 
     detail = client.get(f"/api/projects/{pid}/versions/{vid}").json()
@@ -697,16 +697,52 @@ def test_commit_empty_tags_keeps_non_editor_json_and_returns_effective_state(
         f"/api/projects/{pid}/versions/{vid}/captions/commit",
         json={"items": [{"folder": "1_data", "name": "a.png", "tags": []}]},
     ).json()
+    saved = json.loads(sidecar.read_text(encoding="utf-8"))
     assert result["items"] == [{
         "folder": "1_data", "name": "a.png", "format": "json",
         "has_effective_caption": True,
+        "caption": saved,
+        "nl": content.get("ai_output", {}).get("nl", ""),
     }]
-    saved = json.loads(sidecar.read_text(encoding="utf-8"))
     assert saved["tags"] == []
     for key, value in content.items():
         if key != "tags":
             assert saved[key] == value
     assert (train / "a.txt").read_text(encoding="utf-8") == "txt fallback"
+
+
+def test_commit_keeps_categories_and_updates_description(client: TestClient) -> None:
+    import json
+
+    pid, vid = _make(client)
+    train = _seed_train(client, pid, vid, "1_data", {"a.png": "txt fallback"})
+    sidecar = train / "a.json"
+    sidecar.write_text(json.dumps({
+        "meta": {"trigger": "sks"},
+        "tags": {"count": "1girl, solo", "tags": ["old"], "nl": "Old text."},
+    }), encoding="utf-8")
+
+    result = client.post(
+        f"/api/projects/{pid}/versions/{vid}/captions/commit",
+        json={"items": [{
+            "folder": "1_data", "name": "a.png",
+            "tags": ["1girl", "solo", "new"], "nl": "New text.",
+        }]},
+    ).json()
+
+    saved = json.loads(sidecar.read_text(encoding="utf-8"))
+    assert saved == {
+        "meta": {"trigger": "sks"},
+        "tags": {"count": "1girl, solo", "tags": ["new"], "nl": "New text."},
+    }
+    assert result["items"][0]["caption"] == saved
+    assert result["items"][0]["nl"] == "New text."
+
+    listed = client.get(f"/api/projects/{pid}/versions/{vid}/captions?full=1").json()
+    item = listed["items"][0]
+    assert item["tags"] == ["1girl", "solo", "new"]
+    assert item["nl"] == "New text."
+    assert item["caption"] == saved
 
 
 def test_commit_skips_path_traversal(client: TestClient) -> None:

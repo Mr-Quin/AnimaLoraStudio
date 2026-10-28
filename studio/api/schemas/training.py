@@ -85,6 +85,7 @@ class CommitItem(BaseModel):
     folder: str
     name: str
     tags: list[str]
+    nl: Optional[str] = None
 
 
 class CommitRequest(BaseModel):
