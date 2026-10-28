@@ -2138,6 +2138,8 @@
     "imageListTitle": "训练图片",
     "visibleCount": "{{n}} 张",
     "folderFilterLabel": "训练文件夹筛选",
+    "tagFilterLabel": "按标签筛选图片",
+    "tagFilterPlaceholder": "按标签筛选：a, b, -c",
     "gridLabel": "训练图片标签编辑列表",
     "loading": "正在加载 caption…",
     "loadErrorTitle": "Caption 加载失败",
